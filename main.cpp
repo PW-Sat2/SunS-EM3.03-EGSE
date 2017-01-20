@@ -6,8 +6,15 @@
 #include "Serial.h"
 #include <string.h>
 #include "SunS_Access.h"
+#include "CLI.h"
+#include "SunS_CLI.h"
 
 using namespace hal;
+
+using softi2c = hal::SoftI2C<32, 1>;
+using softi2cdevice = hal::I2C_Device<softi2c>;
+constexpr softi2cdevice dev{0x1E};
+Measure<softi2cdevice> measure(dev);
 
 int main() {
     hal::Serial0.init(9600, hal::STDIO::ENABLE);
@@ -15,36 +22,22 @@ int main() {
     sda.init(DigitalIO::INPUT_PULLUP);
     scl.init(DigitalIO::INPUT_PULLUP);
 
-    using SoftI2C = hal::SoftI2C<32, 1>;
-    SoftI2C::init();
-    constexpr hal::I2C_Device<SoftI2C> dev{0x1E};
-    using SoftI2CDevice = hal::I2C_Device<SoftI2C>;
-
-    SunS_Access<SoftI2CDevice> SunS(dev);
-
-    uint8_t integration_time = 38;
-    uint8_t gain = 0;
+    softi2c::init();
+    
+    static char buf[100];
+    static uint8_t cnt = 0;
 
     printf("Start!\r\n");
     while (true) {
-        SunS.triggerMeasurement(integration_time, gain);
-
-        // wait for conversion end
-        for (uint8_t i = 0; i < integration_time; i++) {
-        _delay_ms(3);
+        while (true) {
+            uint8_t now = Serial0.read_byte();
+            buf[cnt++] = now;
+            if (now == '\r') {
+                buf[cnt-1] = 0;
+                cnt = 0;
+                break;
+            }
         }
-        _delay_ms(2);
-
-        SunS_Access_Types::registerDesc test = SunS.registersRead();
-
-        printf("ALS_1A_RAW = %u\r\n", test.registerMap.ALS_1A_VL_RAW);
-        printf("LM60 = %u\r\n", test.registerMap.TEMPERATURE_STRUCT);
-        printf("RTD_A = %u\r\n\r\n", test.registerMap.TEMPERATURE_A);
-
-        SunS.printRegistersTable();
-        printf("\r\n\r\n");
-        SunS.printRegistersLine();
-
-        _delay_ms(5000);
+        hal::libs::CLI::parse_line(buf);
     }
 }
